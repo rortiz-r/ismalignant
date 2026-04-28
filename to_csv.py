@@ -1,6 +1,7 @@
 import pandas as pd
 import os
 from sklearn.model_selection import train_test_split
+from pathlib import Path
 
 files_add = []
 
@@ -25,7 +26,8 @@ for root, dirs, files in os.walk('./ISIC/'):
             file_to_add = {
             'path': path,
             'classification': get_binary_classification(classification),
-            'medical_name': classification
+            'medical_name': classification,
+            'base_id': Path(path).stem
             }
         
             files_add.append(file_to_add)
@@ -34,16 +36,19 @@ for root, dirs, files in os.walk('./ISIC/'):
 
 dataset = pd.DataFrame(files_add)
 
-train, test = train_test_split(dataset, test_size=0.2, stratify=dataset['medical_name']) 
+train, test_temp = train_test_split(dataset, test_size=0.2, stratify=dataset['medical_name']) 
+
+test, val = train_test_split(test_temp, test_size=0.5, stratify=test_temp['medical_name']) 
 
 train['data_set'] = 'train'
 test['data_set'] = 'test'
+val['data_set'] = 'val'
 
-dataset_final = pd.concat([train, test])
+dataset_final = pd.concat([train, test, val])
 print(dataset_final['data_set'].value_counts())
 print(train['medical_name'].value_counts())
 print(test['medical_name'].value_counts())
 print(train['classification'].value_counts())
 print(test['classification'].value_counts())
 dataset_final = dataset_final.sample(frac=1).reset_index(drop=True)
-dataset_final.to_csv('./data/dataset.csv')
+dataset_final.to_csv('./data/01_dataset.csv')
