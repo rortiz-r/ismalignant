@@ -15,17 +15,16 @@ import evaluate
 from tqdm import tqdm
 
 
-
 device = torch.device('mps')
 model = smp.Unet(encoder_name='efficientnet-b0', encoder_weights='imagenet', in_channels=3, classes=1).to(device)
 model.load_state_dict(torch.load('../data/model_weights_skin_segmentation_ham10000.pth', map_location='mps'))
+
 
 def load_image(path):
     img = cv.imread(path)
     img = cv.cvtColor(img, cv.COLOR_BGR2RGB)
     img = cv.resize(img, (256,256))
     return img
-
 
 
 def segmentate(img, model):
@@ -67,26 +66,21 @@ def crop_image_bounding_box(mask_contours, image):
 
 
 
-
-
 if __name__ == '__main__':
     
 
     # Guardar en nueva ubicación
-    new_path = '../ISIC_BOUNDING_BOX_CROP'
+    new_path = '../../../../../Downloads/HAM10000_BOUNDING_BOX_CROP'
 
     # Crear carpetas
     os.makedirs(new_path, exist_ok=True)
-    os.makedirs(f"{new_path}/train", exist_ok=True)
-    os.makedirs(f"{new_path}/test", exist_ok=True)
-    os.makedirs(f"{new_path}/val", exist_ok=True)
 
     # read paths from csv.
 
     dataset = pd.read_csv('../data/01_dataset.csv')
 
     for index, row in  tqdm(dataset.iterrows(), total=len(dataset)):
-        image = load_image(f".{row['path']}")
+        image = load_image(f"{row['path']}")
         mask = segmentate_lesion_crop_bounding_box(image, model)
 
         kernel = np.ones((15,15), np.uint8)
@@ -100,11 +94,11 @@ if __name__ == '__main__':
 
         # create 
 
-        base_path = f"{new_path}/{row['data_set']}/{row['medical_name']}"
+        base_path = f"{new_path}"
 
         os.makedirs(base_path, exist_ok=True)
 
-        image_path = f"{base_path}/{row['base_id']}.jpg"
+        image_path = f"{base_path}/{row['image_id']}.jpg"
 
         cv.imwrite(image_path, cv.cvtColor(image_crop, cv.COLOR_RGB2BGR))
 

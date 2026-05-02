@@ -10,12 +10,13 @@ import matplotlib.pyplot as plt
 import math
 from tqdm import tqdm
 from skimage.feature import local_binary_pattern, hog
-
+import os
 
 # Load model
 device = torch.device('mps')
 model = smp.Unet(encoder_name='efficientnet-b0', encoder_weights='imagenet', in_channels=3, classes=1).to(device)
-model.load_state_dict(torch.load('./data/model_weights_skin_segmentation_ham10000.pth', map_location='mps'))
+model.load_state_dict(torch.load('../data/model_weights_skin_segmentation_ham10000.pth', map_location='mps'))
+model.eval()
 
 # Function loads and normalize image
 def load_image(path):
@@ -28,7 +29,7 @@ def load_image(path):
 def segmentate(img, model):
     img = img.astype('float32') / 255.0
     img_tensor = torch.tensor(img).permute(2,0,1).unsqueeze(0).to(device)
-    model.eval()
+
     with torch.no_grad():
         output = model(img_tensor)
         output = torch.sigmoid(output).cpu().squeeze().numpy()
@@ -67,28 +68,80 @@ def find_area_perimeter_circularity(contour_max):
     # Raise exception.
     if perimeter > 0:
         circularity = ((4*math.pi*area)/(perimeter*perimeter))
+        compactness = (perimeter*perimeter)/area
 
-    return area, perimeter, circularity
+    return circularity, compactness
 
 #Validate
-def symmetry_score(mask_contours, area):
-    mask_flip_y = cv.flip(mask_contours, 1)
-    mask_flip_x = cv.flip(mask_contours, 0)
+def symmetry_score(mask_contours, contour_max):
 
-    symmetry_comparison_y = cv.absdiff(mask_contours, mask_flip_y)
-    symmetry_comparison_x = cv.absdiff(mask_contours, mask_flip_x)
+    if len(contour_max) < 5:
+        return None, None
 
-    total_y = np.sum(symmetry_comparison_y)/area
-    total_x = np.sum(symmetry_comparison_x)/area
+    ((h_mask, w_mask)) = mask_contours.shape[:2]
 
-    return total_x, total_y
+    # Find the center of the lesion
+
+    moments = cv.moments(mask_contours)
+
+    # Centroid
+
+    cX = int(moments['m10']/moments['m00'])
+    cY = int(moments['m01']/moments['m00'])
+
+    # Angle
+
+    angle = cv.fitEllipse(contour_max)[2]
+
+
+    rotation_matrix = cv.getRotationMatrix2D((cX, cY), 90-angle, 1.0)
+
+
+    rotated = cv.warpAffine(mask_contours, rotation_matrix, (h_mask, w_mask))
+
+    # mirrored
+
+    mirrored_y = cv.flip(rotated, 1)
+    mirrored_x = cv.flip(rotated, 0)
+
+
+    # Intersection
+
+    inter_y = np.sum(cv.bitwise_and(rotated, mirrored_y) > 0)
+
+    # Union
+
+    union_y = np.sum(cv.bitwise_or(rotated, mirrored_y) > 0)
+
+
+
+    asymmetry_index_y = inter_y / union_y
+
+
+    ####
+
+
+    inter_x = np.sum(cv.bitwise_and(rotated, mirrored_x) > 0)
+
+    # Union
+
+    union_x = np.sum(cv.bitwise_or(rotated, mirrored_x) > 0)
+
+
+
+    asymmetry_index_x = inter_x / union_x
+
+
+
+
+    return asymmetry_index_x, asymmetry_index_y
 
 
 def color_variation(image, mask_contours):
 
     res = cv.bitwise_and(image, image, mask=mask_contours.astype(np.uint8))
 
-    mask_image = cv.cvtColor(res, cv.COLOR_BGR2HSV)
+    mask_image = cv.cvtColor(res, cv.COLOR_RGB2HSV)
 
     # Split color channels
 
@@ -99,10 +152,34 @@ def color_variation(image, mask_contours):
     v = v[mask_contours>0]
 
     saturation_std = np.std(s)
-    vue_std = np.std(v)
+    val_std = np.std(v)
+
+    saturation_mean = np.mean(s)
+    val_mean = np.mean(v)
+
+    # Test color hist
+
+    hist_h = cv.calcHist([mask_image], [0], None, [256], [0,256])
+    hist_h = hist_h.ravel() / hist_h.sum()
+
+    probs_h = hist_h[hist_h > 0]
+
+    hist_s = cv.calcHist([mask_image], [1], None, [256], [0,256])
+    hist_s = hist_s.ravel() / hist_s.sum()
+
+    probs_s = hist_s[hist_s > 0]
+
+    hist_v = cv.calcHist([mask_image], [2], None, [256], [0,256])
+    hist_v = hist_v.ravel() / hist_v.sum()
+
+    probs_v = hist_v[hist_v > 0]
+
+    entropy_h = - np.sum(probs_h * np.log2(probs_h))
+    entropy_s = - np.sum(probs_s * np.log2(probs_s))
+    entropy_v = - np.sum(probs_v * np.log2(probs_v))
 
 
-    return saturation_std, vue_std
+    return saturation_std, val_std, saturation_mean, val_mean, entropy_h, entropy_s, entropy_v
 
 
 def find_local_binary_pattern(image, mask_contours):
@@ -114,19 +191,8 @@ def find_local_binary_pattern(image, mask_contours):
     return np.histogram(lbp_filtered, bins=26)[0]
 
 
-# def find_oriented_gradients(image):
-#     image_gray = cv.cvtColor(image, cv.COLOR_RGB2GRAY)
-#     fd, hog_img = hog(
-#         image_gray, orientations=8
-#     )
-
 
 def extract_features(path):
-
-    # Define feature dict
-
-    features = {'diameter':None, 'area':None, 'perimeter':None, 'circularity':None, 'saturation_std':None, 'vue_std':None, 'total_x': None, 'total_y': None}
-
 
     image = load_image(path)
     mask = segmentate(image, model)
@@ -154,38 +220,22 @@ def extract_features(path):
 
     # Calculate area and perimeter and circularity
 
-    area, perimeter, circularity = find_area_perimeter_circularity(contour_max)
+    circularity, compactness = find_area_perimeter_circularity(contour_max)
 
     # Symmetry scores
 
-    total_x, total_y = symmetry_score(mask_contours, area)
+    total_x, total_y = symmetry_score(mask_contours, contour_max)
     
     # Color variation
-    saturation_std, vue_std = color_variation(image, mask_contours)
+    saturation_std, val_std, saturation_mean, val_mean, entropy_h, entropy_s, entropy_v = color_variation(image, mask_contours)
 
     lbp = find_local_binary_pattern(image, mask_contours)
 
-    features = {'diameter':diameter, 'area':area, 'perimeter':perimeter, 'circularity':circularity, 'saturation_std':saturation_std, 'vue_std':vue_std, 'total_x': total_x, 'total_y': total_y}
+    features = {'diameter':diameter, 'compactness': compactness, 'circularity':circularity, 'saturation_std':saturation_std, 'val_std':val_std, 'total_x': total_x, 'total_y': total_y, 'saturation_mean': saturation_mean, 'val_mean': val_mean, 'entropy_h': entropy_h, 'entropy_s': entropy_s, 'entropy_v':entropy_v}
     
     for i in range(len(lbp)):
         features[f"p{i}"] = lbp[i]
 
-    # Print original photo, mask and bounding rectangle
-
-    # plt.figure(figsize=(10,10))
-    # plt.subplot(1,2,1)
-    # plt.title("Original image")
-    # plt.imshow(image)
-
-    # plt.subplot(1,2,2)
-    # plt.title("Mask")
-    # plt.imshow(mask, cmap='gray')
-    
-
-    # plt.subplot(2,2,1)
-    # plt.title("Bounding rectangle")
-    # plt.imshow(mask_bounding_rectangle, cmap='gray')
-    # plt.show()
 
     return features
 
@@ -195,13 +245,18 @@ def extract_features(path):
 
 if __name__ == '__main__':
 
-    dataset = pd.read_csv('./data/dataset.csv', index_col=0)
+    dataset = pd.read_csv('../data/01_dataset.csv', index_col=0)
+    dataset = dataset.sort_values('image_id').reset_index(drop=True)
+
     print('Extracting features...')
     for index, row in tqdm(dataset.iterrows(), total=len(dataset)):
-        features = extract_features(row['path'])
+        path = f"{row['path']}"
+        features = extract_features(path)
+
         for key, value in features.items():
             dataset.at[index, key] = value
         
     
-    dataset.to_csv('./data/dataset_w_features.csv')
+    dataset.to_csv('../data/03_dataset_w_features.csv')
+
 
