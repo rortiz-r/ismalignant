@@ -12,12 +12,12 @@ from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 import segmentation_models_pytorch as smp
 from transformers import get_scheduler
-import evaluate
 from tqdm import tqdm
 
 device = torch.device('mps')
 model = models.resnet50(weights='DEFAULT').to(device)
 model.fc = nn.Identity()
+model.eval()
 
 class CustomDataset(Dataset):
     def __init__(self, img):
@@ -60,7 +60,7 @@ if __name__ == '__main__':
 
     embeddings = []
 
-    model.eval()
+
     for idx, data in enumerate(tqdm(img_loader)):
         embedding = get_features(data.to(device))
         embeddings.extend(embedding)

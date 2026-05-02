@@ -12,10 +12,16 @@ from tqdm import tqdm
 from skimage.feature import local_binary_pattern, hog
 import os
 
+
+#Build path
+
+base_path = os.path.dirname(os.path.abspath(__file__))
+model_path = os.path.join(base_path, '..', 'data', 'model_weights_skin_segmentation_ham10000.pth')
+
 # Load model
 device = torch.device('mps')
 model = smp.Unet(encoder_name='efficientnet-b0', encoder_weights='imagenet', in_channels=3, classes=1).to(device)
-model.load_state_dict(torch.load('../data/model_weights_skin_segmentation_ham10000.pth', map_location='mps'))
+model.load_state_dict(torch.load(model_path, map_location='mps'))
 model.eval()
 
 # Function loads and normalize image
