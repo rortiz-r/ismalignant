@@ -1,2 +1,4 @@
 ISIC/
 ISIC_BOUNDING_BOX_CROP/
+
+*.npz
