@@ -4,7 +4,7 @@ import torch
 from torch.utils.data import DataLoader, Dataset
 import cv2 as cv
 from tqdm import tqdm
-from config import device, model_resnet as model
+from ..config import device, model_resnet as model, HOME_DIR, BASE_PATH
 
 
 class CustomDataset(Dataset):
@@ -16,7 +16,7 @@ class CustomDataset(Dataset):
 
 
     def __getitem__(self, index):
-        img = cv.imread(f'{self.imgs[index]}') # Improve
+        img = cv.imread(f'{HOME_DIR}{self.imgs[index]}') # Improve
         img = cv.cvtColor(img, cv.COLOR_BGR2RGB)
         img = cv.resize(img, (256,256))
         img = img.astype('float32') / 255.0
@@ -34,16 +34,20 @@ def get_features(image):
 
 if __name__ == '__main__':
 
-    dataset = pd.read_csv('../data/02_dataset_crop.csv')
-    dataset = dataset.sort_values('image_id').reset_index(drop=True)
+    dataset = pd.read_csv(f'{BASE_PATH}/data/03_dataset_crop.csv')
+    dataset = dataset.sort_values('image')
 
+    print(dataset)
+    
     img_paths = dataset['path']
 
     img_paths = np.array(img_paths)
-    img_base_ids = np.array(dataset['image_id'])
+    img_base_ids = np.array(dataset['image'])
 
     images_dataset = CustomDataset(img_paths)
     img_loader = DataLoader(images_dataset, batch_size=32, shuffle=False, num_workers=4)
+
+
 
     embeddings = []
 
@@ -59,7 +63,7 @@ if __name__ == '__main__':
 
     print(embeddings_np.shape)
 
-    np.savez('../data/embeddings.npz', embeddings = embeddings_np, base_ids=img_base_ids)
+    np.savez(f'{BASE_PATH}/data/embeddings.npz', embeddings = embeddings_np, base_ids=img_base_ids)
 
         
 

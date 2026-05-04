@@ -5,8 +5,9 @@ import cv2 as cv
 import math
 from tqdm import tqdm
 from skimage.feature import local_binary_pattern
-from config import device, model
-
+from ..config import device, model, BASE_PATH, HOME_DIR
+import os
+from pathlib import Path
 
 
 # Function loads and normalize image
@@ -15,6 +16,14 @@ def load_image(path):
     img = cv.cvtColor(img, cv.COLOR_BGR2RGB)
     img = cv.resize(img, (256,256))
     return img
+
+
+def is_well_segmented(contour):
+    area = cv.contourArea(contour)
+    if len(contour) < 5 or area < 0.01:
+        return False
+
+    return True
 
 
 def segmentate(img, model):
@@ -35,6 +44,9 @@ def find_lesion_contours(blur_mask):
     mask_contours = np.zeros((h,w))
 
     contours, _ = cv.findContours(blur_mask, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)
+
+    if not contours:
+        return None, None
 
     contour_max = max(contours, key=cv.contourArea)
 
@@ -63,9 +75,7 @@ def find_area_perimeter_circularity(contour_max):
 
 #Validate
 def symmetry_score(mask_contours, contour_max):
-
-    if len(contour_max) < 5:
-        return None, None
+    
 
     ((h_mask, w_mask)) = mask_contours.shape[:2]
 
@@ -181,15 +191,17 @@ def find_local_binary_pattern(image, mask_contours):
 
 
 
+
 def extract_features(path):
+
+    features = {'diameter': None, 'compactness': None, 'circularity': None, 'saturation_std': None, 'val_std':None, 'total_x': None, 'total_y': None, 'saturation_mean': None, 'val_mean': None, 'entropy_h': None, 'entropy_s': None, 'entropy_v':None}
+    
 
     image = load_image(path)
     mask = segmentate(image, model)
 
-
-
-    if np.sum(mask) == 0:
-        return features 
+    if np.sum(mask) == 0: 
+        return features
     
     # Apply morphological operations and apply blur to mask
     kernel = np.ones((15,15), np.uint8)
@@ -202,6 +214,8 @@ def extract_features(path):
     
     contour_max, mask_contours = find_lesion_contours(blur_mask)
 
+    if contour_max is None or not is_well_segmented(contour_max):
+        return features
     
     # Find the perimeter of the lesion
 
@@ -234,18 +248,37 @@ def extract_features(path):
 
 if __name__ == '__main__':
 
-    dataset = pd.read_csv('../data/01_dataset.csv', index_col=0)
-    dataset = dataset.sort_values('image_id').reset_index(drop=True)
+    dataset_path = f"{BASE_PATH}/data/01_dataset.csv"
+    
+    dataset = pd.read_csv(dataset_path, index_col=0)
+
+    dataset = dataset.reset_index()
+
+    dataset = dataset.sort_values('image')
+
 
     print('Extracting features...')
     for index, row in tqdm(dataset.iterrows(), total=len(dataset)):
-        path = f"{row['path']}"
+
+        path = f"{HOME_DIR}/{row['path']}"
         features = extract_features(path)
 
         for key, value in features.items():
             dataset.at[index, key] = value
         
     
-    dataset.to_csv('../data/03_dataset_w_features.csv')
+    print(dataset['dx'].value_counts())
+    # Filter dataset
+
+    # Filter rows where total_y and total_x are 0
+    mask = (dataset['total_x'] == 0.0) & (dataset['total_y'] == 0.0)
+    dataset = dataset[~mask].dropna()
+    dataset = dataset.drop_duplicates(subset=['image'], keep=False, inplace=False, ignore_index=False)
+
+    print(dataset['dx'].value_counts())
+
+    save_path = f'{BASE_PATH}/data/02_dataset_w_features.csv'
+
+    dataset.to_csv(save_path)
 
 

@@ -11,13 +11,10 @@ from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 import segmentation_models_pytorch as smp
 from transformers import get_scheduler
-import evaluate
 from tqdm import tqdm
+from ..config import BASE_PATH, HOME_DIR, model, device
 
 
-device = torch.device('mps')
-model = smp.Unet(encoder_name='efficientnet-b0', encoder_weights='imagenet', in_channels=3, classes=1).to(device)
-model.load_state_dict(torch.load('../data/model_weights_skin_segmentation_ham10000.pth', map_location='mps'))
 
 
 def load_image(path):
@@ -49,6 +46,9 @@ def find_lesion_contours(blur_mask):
     contour_max = max(contours, key=cv.contourArea)
 
     cv.drawContours(mask_contours, [contour_max], -1, 255, -1)
+
+    if len(contour_max) < 5:
+        return None, None
     
     return contour_max, mask_contours
 
@@ -70,17 +70,24 @@ if __name__ == '__main__':
     
 
     # Guardar en nueva ubicación
-    new_path = '../../../../../Downloads/HAM10000_BOUNDING_BOX_CROP'
+    new_path = f'{HOME_DIR}/Downloads/ISIC_2019_BOUNDING_BOX_CROP'
+
+    nevo_path = f'{new_path}/NV'
+    mel_path = f'{new_path}/MEL'
 
     # Crear carpetas
     os.makedirs(new_path, exist_ok=True)
+    os.makedirs(nevo_path, exist_ok=True)
+    os.makedirs(mel_path, exist_ok=True)
 
-    # read paths from csv.
+    dataset_path = f"{BASE_PATH}/data/02_dataset_w_features.csv"
 
-    dataset = pd.read_csv('../data/01_dataset.csv')
+    dataset = pd.read_csv(dataset_path)
 
     for index, row in  tqdm(dataset.iterrows(), total=len(dataset)):
-        image = load_image(f"{row['path']}")
+
+        path = f"{HOME_DIR}/{row['path']}"
+        image = load_image(path)
         mask = segmentate_lesion_crop_bounding_box(image, model)
 
         kernel = np.ones((15,15), np.uint8)
@@ -94,11 +101,8 @@ if __name__ == '__main__':
 
         # create 
 
-        base_path = f"{new_path}"
+        image_path = f"{new_path}/{row['dx']}/{row['image']}.jpg"
 
-        os.makedirs(base_path, exist_ok=True)
-
-        image_path = f"{base_path}/{row['image_id']}.jpg"
 
         cv.imwrite(image_path, cv.cvtColor(image_crop, cv.COLOR_RGB2BGR))
 

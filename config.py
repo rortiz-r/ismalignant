@@ -4,15 +4,19 @@ import segmentation_models_pytorch as smp
 from torchvision import models 
 import torch.nn as nn
 import joblib
+from pathlib import Path
 
+BASE_PATH = os.path.dirname(os.path.abspath(__file__))
 
-base_path = os.path.dirname(os.path.abspath(__file__))
-model_path = os.path.join(base_path, '.', 'data', 'model_weights_skin_segmentation_ham10000.pth')
+HOME_DIR = Path.home()
+
+MODEL_PATH = os.path.join(BASE_PATH, '.', 'data', 'model_weights_skin_segmentation_ham10000.pth')
+
 
 
 device = torch.device('mps')
 model = smp.Unet(encoder_name='efficientnet-b0', encoder_weights='imagenet', in_channels=3, classes=1).to(device)
-model.load_state_dict(torch.load(model_path, map_location='mps'))
+model.load_state_dict(torch.load(MODEL_PATH, map_location='mps'))
 model.eval()
 
 
