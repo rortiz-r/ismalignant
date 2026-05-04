@@ -1,26 +1,14 @@
 
 from feature_extraction.classical_feature_extraction import extract_features, load_image
-from feature_extraction.modern_feature_extraction import get_features, CustomDataset
+from feature_extraction.embeddings_extraction import get_features, CustomDataset
 from recommendation.similar_lesion import get_recommendations
 import sys
-import torch
-import joblib
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-import os
-from pathlib import Path
+from config import load_scaler_pca_svm, device
 
-device = torch.device('mps')
 
-def load_scaler_pca_svm():
-    scaler_classic = joblib.load('./data/scaler_classic.pkl')
-    scaler_cnn = joblib.load('./data/scaler_cnn.pkl')
-    pca = joblib.load('./data/pca.pkl')
-    svm = joblib.load('./data/model_svm_08_sampling_strgy.pkl')
-    label_encoder = joblib.load('./data/label_encoder.pkl')
 
-    return scaler_classic, scaler_cnn, pca, label_encoder,svm
 
 def get_classic_modern_features(path):
 
@@ -31,6 +19,7 @@ def get_classic_modern_features(path):
     embeddings = get_features(image_dataset[0].unsqueeze(0).to(device))
 
     return classic_features, embeddings
+
 
 def process_data_for_model(classic_features, embeddings):
 
@@ -114,18 +103,6 @@ def get_features_percentile_analysis(features_names, features_values, data, type
         print(f"{features_names[i]} ({features_values[0][i]:.3f}): {percentile_lecture} of {type} lesions: {lecture}\n")
 
 
-def print_lesions(list_lesion):
-    for index, row in list_lesion.iterrows():
-        path_image = Path(row['path']).resolve().absolute()
-        image = load_image(path_image)
-        plt.figure()
-        plt.subplot(1,5,index+1)
-        plt.imshow(image)
-    
-    plt.show()
-
-
-
 
 if __name__ == '__main__':
 
@@ -135,12 +112,10 @@ if __name__ == '__main__':
     classic_features, embeddings = get_classic_modern_features(path)
     feature_names = ['diameter', 'circularity', 'total_x', 'total_y']
 
-
     classic_features_val = [classic_features[k] for k in feature_names if k in classic_features]
     classic_features_val = np.array(classic_features_val).reshape(1,4)
 
     scaler_classic, scaler_cnn, pca, label_encoder, svm = load_scaler_pca_svm()
-
     
     features = process_data_for_model(classic_features_val, embeddings)
     t = 0.5
@@ -156,22 +131,20 @@ if __name__ == '__main__':
     # SIMILAR LESIONS
 
     similar_lesions = get_recommendations(features)
-    print(type(similar_lesions))
 
-    print_lesions(similar_lesions)
 
-    # # Statistics by class
+    ## Statistics by class
 
     melanoma_p = pd.read_csv('./data/melanoma_percentiles.csv')
     nevo_p = pd.read_csv('./data/nevo_percentiles.csv')
 
     ### Formatting output
-    print(f"La lesión analizada tiene los siguientes parámetros basado en los lineamientos ABCD")
-    print(f"Probablemente la lesión es un {prediction} con una confianza del {confidence:.2f}%")
+    print("The analyzed lesion has the following parameters based on the ABCD guidelines")
+    print(f"The lesion is likely a {prediction} with a confidence of {confidence:.2f}%")
     print("Comparison between melanomas")
     get_features_percentile_analysis(feature_names, classic_features_val, melanoma_p, 'Melanoma')
-    print("Comparison between nevos")
-    get_features_percentile_analysis(feature_names, classic_features_val, nevo_p, 'Nevo')
+    print("Comparison between nevi")
+    get_features_percentile_analysis(feature_names, classic_features_val, nevo_p, 'Nevus')
     
     
 

@@ -1,28 +1,13 @@
 import pandas as pd
 import numpy as np
 import torch
-import torch.nn as nn
-import torch.optim as optim
-from torch.utils.data import DataLoader, Dataset
 import cv2 as cv
-import segmentation_models_pytorch as smp
-import matplotlib.pyplot as plt
 import math
 from tqdm import tqdm
-from skimage.feature import local_binary_pattern, hog
-import os
+from skimage.feature import local_binary_pattern
+from config import device, model
 
 
-#Build path
-
-base_path = os.path.dirname(os.path.abspath(__file__))
-model_path = os.path.join(base_path, '..', 'data', 'model_weights_skin_segmentation_ham10000.pth')
-
-# Load model
-device = torch.device('mps')
-model = smp.Unet(encoder_name='efficientnet-b0', encoder_weights='imagenet', in_channels=3, classes=1).to(device)
-model.load_state_dict(torch.load(model_path, map_location='mps'))
-model.eval()
 
 # Function loads and normalize image
 def load_image(path):
@@ -60,11 +45,9 @@ def find_lesion_contours(blur_mask):
 
 def find_diameter(blur_mask):
     (h,w) = blur_mask.shape[:2]
-    mask_bounding_rectangle = np.zeros((h,w))
     x,y,w,h = cv.boundingRect(blur_mask.astype(np.uint8))
-    cv.rectangle(mask_bounding_rectangle, (x,y), (x+w, y+h), 255)
     diameter = max(w,h)
-    return mask_bounding_rectangle, diameter
+    return diameter
 
 
 def find_area_perimeter_circularity(contour_max):
@@ -222,7 +205,7 @@ def extract_features(path):
     
     # Find the perimeter of the lesion
 
-    mask_bounding_rectangle, diameter = find_diameter(mask_contours)
+    diameter = find_diameter(mask_contours)
 
     # Calculate area and perimeter and circularity
 
