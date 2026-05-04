@@ -1,12 +1,15 @@
 
-from feature_extraction.classical_feature_extraction import extract_features
+from feature_extraction.classical_feature_extraction import extract_features, load_image
 from feature_extraction.modern_feature_extraction import get_features, CustomDataset
+from recommendation.similar_lesion import get_recommendations
 import sys
 import torch
 import joblib
 import numpy as np
 import pandas as pd
-
+import matplotlib.pyplot as plt
+import os
+from pathlib import Path
 
 device = torch.device('mps')
 
@@ -14,7 +17,7 @@ def load_scaler_pca_svm():
     scaler_classic = joblib.load('./data/scaler_classic.pkl')
     scaler_cnn = joblib.load('./data/scaler_cnn.pkl')
     pca = joblib.load('./data/pca.pkl')
-    svm = joblib.load('./data/model_svm_wo_lbp_and_colors_4.pkl')
+    svm = joblib.load('./data/model_svm_08_sampling_strgy.pkl')
     label_encoder = joblib.load('./data/label_encoder.pkl')
 
     return scaler_classic, scaler_cnn, pca, label_encoder,svm
@@ -41,8 +44,8 @@ def process_data_for_model(classic_features, embeddings):
     return image_features
 
 
-def format_classification(prediction):
-    if prediction > 0.5:
+def format_classification(prediction, t):
+    if prediction >= t:
         return 'Melanoma'
     return 'Nevo'
 
@@ -108,7 +111,20 @@ def get_features_percentile_analysis(features_names, features_values, data, type
             lecture = get_lecture_for_asymmetry(features_values[0][i], p25, p75, p90)
 
         percentile_lecture = get_percentile_lecture(features_values[0][i], p25, p75, p90)
-        print(f"{features_names[i]} ({features_values[0][i]:.3f}): {percentile_lecture} of {type} lesions — {lecture}\n")
+        print(f"{features_names[i]} ({features_values[0][i]:.3f}): {percentile_lecture} of {type} lesions: {lecture}\n")
+
+
+def print_lesions(list_lesion):
+    for index, row in list_lesion.iterrows():
+        path_image = Path(row['path']).resolve().absolute()
+        image = load_image(path_image)
+        plt.figure()
+        plt.subplot(1,5,index+1)
+        plt.imshow(image)
+    
+    plt.show()
+
+
 
 
 if __name__ == '__main__':
@@ -125,12 +141,24 @@ if __name__ == '__main__':
 
     scaler_classic, scaler_cnn, pca, label_encoder, svm = load_scaler_pca_svm()
 
+    
     features = process_data_for_model(classic_features_val, embeddings)
+    t = 0.5
     prob = svm.predict_proba(features)
-    prob_index = np.argmax(prob[0] > 0.5)
+    prob_index = np.argmax(prob[0] >= t)
     confidence = (prob[0][prob_index]) * 100
-    prediction = format_classification(prob[0][prob_index])
+    prediction = format_classification(prob[0][prob_index], t=t)
 
+    if confidence <= 70:
+        print("Mixed clinical features, specialist evaluation is needed")
+
+
+    # SIMILAR LESIONS
+
+    similar_lesions = get_recommendations(features)
+    print(type(similar_lesions))
+
+    print_lesions(similar_lesions)
 
     # # Statistics by class
 
