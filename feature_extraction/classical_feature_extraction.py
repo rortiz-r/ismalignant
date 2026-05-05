@@ -8,11 +8,12 @@ from skimage.feature import local_binary_pattern
 from ..config import device, model, BASE_PATH, HOME_DIR
 import os
 from pathlib import Path
+import matplotlib.pyplot as plt
 
 
 # Function loads and normalize image
 def load_image(path):
-    img = cv.imread(path)
+    img = cv.imread(Path(path).resolve())
     img = cv.cvtColor(img, cv.COLOR_BGR2RGB)
     img = cv.resize(img, (256,256))
     return img
@@ -192,7 +193,7 @@ def find_local_binary_pattern(image, mask_contours):
 
 
 
-def extract_features(path):
+def extract_features(path, isprod=False):
 
     features = {'diameter': None, 'compactness': None, 'circularity': None, 'saturation_std': None, 'val_std':None, 'total_x': None, 'total_y': None, 'saturation_mean': None, 'val_mean': None, 'entropy_h': None, 'entropy_s': None, 'entropy_v':None}
     
@@ -239,6 +240,18 @@ def extract_features(path):
     for i in range(len(lbp)):
         features[f"p{i}"] = lbp[i]
 
+    figures_to_plot = {'Original': image, 'Lesion Mask':mask_contours}
+
+    if isprod:
+        fig, axes = plt.subplots(1, 2, figsize=(20, 4))
+    
+        for i,(key, value) in enumerate(figures_to_plot.items()):
+            axes[i].imshow(value, cmap='gray')
+            axes[i].set_title(key, fontsize=9)
+            axes[i].axis('off')
+        
+        plt.tight_layout()
+        plt.show(block=False)
 
     return features
 

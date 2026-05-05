@@ -5,7 +5,7 @@ from torch.utils.data import DataLoader, Dataset
 import cv2 as cv
 from tqdm import tqdm
 from ..config import device, model_resnet as model, HOME_DIR, BASE_PATH
-
+from pathlib import Path
 
 class CustomDataset(Dataset):
     def __init__(self, img):
@@ -16,7 +16,7 @@ class CustomDataset(Dataset):
 
 
     def __getitem__(self, index):
-        img = cv.imread(f'{HOME_DIR}{self.imgs[index]}') # Improve
+        img = cv.imread((self.imgs[index])) # Improve
         img = cv.cvtColor(img, cv.COLOR_BGR2RGB)
         img = cv.resize(img, (256,256))
         img = img.astype('float32') / 255.0

@@ -7,36 +7,30 @@ from sklearn.decomposition import PCA
 from sklearn.metrics.pairwise import cosine_similarity
 import joblib
 import os
+from ..config import load_scaler_pca_svm, BASE_PATH
 
-def load_scaler_pca_svm():
-    scaler_classic = joblib.load('./data/scaler_classic.pkl')
-    scaler_cnn = joblib.load('./data/scaler_cnn.pkl')
-    pca = joblib.load('./data/pca.pkl')
-    svm = joblib.load('./data/model_svm_08_sampling_strgy.pkl')
-    label_encoder = joblib.load('./data/label_encoder.pkl')
 
-    return scaler_classic, scaler_cnn, pca, label_encoder,svm
-
+# Improve repeated code
 
 scaler_classic, scaler_cnn, pca, label_encoder,svm = load_scaler_pca_svm()
 
 base_path = os.path.dirname(os.path.abspath(__file__))
-embeddings_path = os.path.join(base_path, '..', 'data', 'embeddings.npz')
-classic_features_path = os.path.join(base_path, '..', 'data', '03_dataset_w_features.csv')
+embeddings_path = f"{BASE_PATH}/data/embeddings.npz"
+classic_features_path = f"{BASE_PATH}/data/02_dataset_w_features.csv"
 
 features_efficient_net = np.load(embeddings_path, allow_pickle=True)
 
 dataset = pd.read_csv(classic_features_path, index_col=0)
-dataset = dataset.sort_values('image_id').reset_index(drop=True)
+dataset = dataset.sort_values('image').reset_index(drop=True)
 mask = (dataset['total_x'] == 0.0) & (dataset['total_y'] == 0.0)
 dataset = dataset[~mask].dropna()
-dataset = dataset.drop_duplicates(subset=['image_id'], keep=False, inplace=False, ignore_index=False)
-valid_ids = dataset['image_id'].values
+dataset = dataset.drop_duplicates(subset=['image'], keep=False, inplace=False, ignore_index=False)
+valid_ids = dataset['image'].values
 mask_ids = np.isin(features_efficient_net['base_ids'], valid_ids)
 embeddings_valid = features_efficient_net['embeddings'][mask_ids]
 id_embeddings = features_efficient_net['base_ids'][mask_ids]
 
-X_classic = dataset[['diameter', 'circularity', 'total_x', 'total_y']] 
+X_classic = dataset[['diameter', 'circularity', 'saturation_std', 'val_std', 'total_x', 'total_y', 'saturation_mean', 'val_mean'] + [f'p{i}' for i in range(26)]] 
 X_cnn = embeddings_valid
 y = dataset['dx'].values
 
@@ -60,7 +54,6 @@ X_stacked = np.hstack([X_scaled_classic, X_cnn_pca ])
 def get_recommendations(query):
 
     scores = cosine_similarity(query, X_stacked)[0]
-
 
     index = np.argsort(scores)[::-1]
     

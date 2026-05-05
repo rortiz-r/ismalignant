@@ -27,10 +27,10 @@ model_resnet.eval()
 
 
 def load_scaler_pca_svm():
-    scaler_classic = joblib.load('./data/scaler_classic.pkl')
-    scaler_cnn = joblib.load('./data/scaler_cnn.pkl')
-    pca = joblib.load('./data/pca.pkl')
-    svm = joblib.load('./data/model_svm_08_sampling_strgy.pkl')
-    label_encoder = joblib.load('./data/label_encoder.pkl')
+    scaler_classic = joblib.load(f'{BASE_PATH}/data/scaler_classic.pkl')
+    scaler_cnn = joblib.load(f'{BASE_PATH}/data/scaler_cnn.pkl')
+    pca = joblib.load(f'{BASE_PATH}/data/pca.pkl')
+    svm = joblib.load(f'{BASE_PATH}/data/model_svm_final.pkl')
+    label_encoder = joblib.load(f'{BASE_PATH}/data/label_encoder.pkl')
 
     return scaler_classic, scaler_cnn, pca, label_encoder,svm
