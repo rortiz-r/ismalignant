@@ -4,7 +4,7 @@ import torch
 import cv2 as cv
 import math
 from tqdm import tqdm
-from skimage.feature import local_binary_pattern
+from skimage.feature import local_binary_pattern, graycomatrix, graycoprops
 from ..config import device, model, BASE_PATH, HOME_DIR
 import os
 from pathlib import Path
@@ -56,9 +56,9 @@ def find_lesion_contours(blur_mask):
     return contour_max, mask_contours
 
 
-def find_diameter(blur_mask):
-    (h,w) = blur_mask.shape[:2]
-    x,y,w,h = cv.boundingRect(blur_mask.astype(np.uint8))
+def find_diameter(contour_max):
+    (h,w) = contour_max.shape[:2]
+    x,y,w,h = cv.boundingRect(contour_max.astype(np.uint8))
     diameter = max(w,h)
     return diameter
 
@@ -136,12 +136,10 @@ def symmetry_score(mask_contours, contour_max):
 
     return asymmetry_index_x, asymmetry_index_y
 
-
 def color_variation(image, mask_contours):
 
-    res = cv.bitwise_and(image, image, mask=mask_contours.astype(np.uint8))
+    mask_image = cv.cvtColor(image, cv.COLOR_RGB2HSV)
 
-    mask_image = cv.cvtColor(res, cv.COLOR_RGB2HSV)
 
     # Split color channels
 
@@ -157,29 +155,32 @@ def color_variation(image, mask_contours):
     saturation_mean = np.mean(s)
     val_mean = np.mean(v)
 
-    # Test color hist
 
-    hist_h = cv.calcHist([mask_image], [0], None, [256], [0,256])
-    hist_h = hist_h.ravel() / hist_h.sum()
-
-    probs_h = hist_h[hist_h > 0]
-
-    hist_s = cv.calcHist([mask_image], [1], None, [256], [0,256])
-    hist_s = hist_s.ravel() / hist_s.sum()
-
-    probs_s = hist_s[hist_s > 0]
-
-    hist_v = cv.calcHist([mask_image], [2], None, [256], [0,256])
-    hist_v = hist_v.ravel() / hist_v.sum()
-
-    probs_v = hist_v[hist_v > 0]
-
-    entropy_h = - np.sum(probs_h * np.log2(probs_h))
-    entropy_s = - np.sum(probs_s * np.log2(probs_s))
-    entropy_v = - np.sum(probs_v * np.log2(probs_v))
+    return saturation_std, val_std, saturation_mean, val_mean
 
 
-    return saturation_std, val_std, saturation_mean, val_mean, entropy_h, entropy_s, entropy_v
+
+
+def glcm_homogeneity(image, mask_contours):
+    # convert binary image to range 0, 255
+
+    mask_contours = np.where(mask_contours > 0, 255,0).astype(np.uint8)
+
+    # Convert image to gray
+
+    image = cv.cvtColor(image, cv.COLOR_RGB2GRAY)
+
+    image = cv.bitwise_and(image, mask_contours) # Work only with the region of interest.
+
+    # Calculate
+
+    glcm = graycomatrix(image, distances=[1,2,3,4], angles=[0, np.pi/4, np.pi/2, 3*np.pi/4])
+
+    homogeneity = graycoprops(glcm, 'homogeneity')
+
+    homogeneity = np.mean(homogeneity, axis=1)
+
+    return homogeneity
 
 
 def find_local_binary_pattern(image, mask_contours):
@@ -193,13 +194,14 @@ def find_local_binary_pattern(image, mask_contours):
 
 
 
-def extract_features(path, isprod=False):
+def extract_features(path, show_mask=False):
 
-    features = {'diameter': None, 'compactness': None, 'circularity': None, 'saturation_std': None, 'val_std':None, 'total_x': None, 'total_y': None, 'saturation_mean': None, 'val_mean': None, 'entropy_h': None, 'entropy_s': None, 'entropy_v':None}
+    features = {'diameter': None, 'compactness': None, 'circularity': None, 'total_x': None, 'total_y': None, 'saturation_mean': None, 'saturation_std': None, 'val_mean': None, 'val_std': None}
     
 
     image = load_image(path)
     mask = segmentate(image, model)
+
 
     if np.sum(mask) == 0: 
         return features
@@ -230,20 +232,25 @@ def extract_features(path, isprod=False):
 
     total_x, total_y = symmetry_score(mask_contours, contour_max)
     
+    # Texture homogeneity
+    homogeneity = glcm_homogeneity(image, mask_contours)
+
     # Color variation
-    saturation_std, val_std, saturation_mean, val_mean, entropy_h, entropy_s, entropy_v = color_variation(image, mask_contours)
 
-    lbp = find_local_binary_pattern(image, mask_contours)
+    saturation_std, val_std, saturation_mean, val_mean = color_variation(image, mask_contours)
 
-    features = {'diameter':diameter, 'compactness': compactness, 'circularity':circularity, 'saturation_std':saturation_std, 'val_std':val_std, 'total_x': total_x, 'total_y': total_y, 'saturation_mean': saturation_mean, 'val_mean': val_mean, 'entropy_h': entropy_h, 'entropy_s': entropy_s, 'entropy_v':entropy_v}
+    # lbp = find_local_binary_pattern(image, mask_contours)
+
+    features = {'diameter':diameter, 'compactness': compactness, 'circularity':circularity, 'total_x': total_x, 'total_y': total_y, 'saturation_mean': saturation_mean, 'saturation_std': saturation_std, 'val_mean': val_mean, 'val_std': val_std}
     
-    for i in range(len(lbp)):
-        features[f"p{i}"] = lbp[i]
+    for i in range(len(homogeneity)):
+        features[f"h{i}"] = homogeneity[i]
+
 
     figures_to_plot = {'Original': image, 'Lesion Mask':mask_contours}
 
-    if isprod:
-        fig, axes = plt.subplots(1, 2, figsize=(20, 4))
+    if show_mask:
+        _, axes = plt.subplots(1, 2, figsize=(20, 4))
     
         for i,(key, value) in enumerate(figures_to_plot.items()):
             axes[i].imshow(value, cmap='gray')

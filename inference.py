@@ -5,7 +5,7 @@ from ismalignant.recommendation.similar_lesion import get_recommendations
 import sys
 import numpy as np
 import pandas as pd
-from .config import load_scaler_pca_svm, device, BASE_PATH, HOME_DIR
+from .config import load_scaler_pca_svm, device, BASE_PATH, HOME_DIR, model_resnet
 import matplotlib.pyplot as plt
 from pathlib import Path
 
@@ -18,7 +18,8 @@ def get_classic_modern_features(path):
 
     image_dataset = CustomDataset([path])
 
-    embeddings = get_features(image_dataset[0].unsqueeze(0).to(device))
+    embeddings = get_features(image_dataset[0].unsqueeze(0).to(device), model_resnet)
+
 
     return classic_features, embeddings
 
@@ -27,8 +28,6 @@ def process_data_for_model(classic_features, embeddings):
 
     image_classic_features = scaler_classic.transform(classic_features)
     embeddings_features = scaler_cnn.transform(embeddings)
-
-    embeddings_features = pca.transform(embeddings_features)
 
     image_features = np.hstack([image_classic_features, embeddings_features])
 
@@ -102,14 +101,14 @@ def get_features_percentile_analysis(features_names, features_values, data, type
             lecture = get_lecture_for_asymmetry(features_values[0][i], p25, p75, p90)
 
         percentile_lecture = get_percentile_lecture(features_values[0][i], p25, p75, p90)
-        print(f"{features_names[i]} ({features_values[0][i]:.3f}): {percentile_lecture} of {type} lesions: {lecture}\n")
+        print(f"{features_names[i]} {features_values[0][i]:.3f} {lecture}\n")
 
 
 def show_recommendations(recommendations):
 
     fig, axes = plt.subplots(1, 5, figsize=(20, 4))
 
-    fig.suptitle('Similar Lesions', fontsize=14)
+    fig.suptitle('Similar Lesions', fontsize=22)
     for i, (_, row) in enumerate(recommendations.iterrows()):
         img_path = f'{HOME_DIR}{row['path']}'
         img = load_image(img_path)
@@ -127,12 +126,12 @@ if __name__ == '__main__':
     path = sys.argv[1]
     
     classic_features, embeddings = get_classic_modern_features(path)
-    feature_names = ['diameter', 'circularity', 'saturation_std', 'val_std', 'total_x', 'total_y', 'saturation_mean', 'val_mean'] + [f'p{i}' for i in range(26)]
+    feature_names = ['diameter', 'circularity', 'total_x', 'total_y', 'saturation_mean', 'saturation_std', 'val_mean', 'val_std'] + [f'h{i}' for i in range(4)]
 
     classic_features_val = np.array([classic_features[k] for k in feature_names if k in classic_features]).reshape(1,len(feature_names))
 
 
-    scaler_classic, scaler_cnn, pca, label_encoder, svm = load_scaler_pca_svm()
+    scaler_classic, scaler_cnn, label_encoder, svm = load_scaler_pca_svm()
     
     features = process_data_for_model(classic_features_val, embeddings)
     t = 0.5
@@ -142,7 +141,7 @@ if __name__ == '__main__':
     prediction = format_classification(prob[0][prob_index], t=t)
 
     if confidence <= 70:
-        print("Mixed clinical features, specialist evaluation is needed")
+        print("Mixed clinical features")
 
 
     # SIMILAR LESIONS
@@ -156,10 +155,8 @@ if __name__ == '__main__':
     nevo_p = pd.read_csv(f'{BASE_PATH}/data/nevo_percentiles.csv')
 
     ### Formatting output
-    print("The analyzed lesion has the following parameters based on the ABCD guidelines")
     print(f"The lesion is likely a {prediction} with a confidence of {confidence:.2f}%")
     print("Comparison between melanomas")
-
 
     interpretation = ['diameter', 'circularity', 'total_x', 'total_y']
     interpretation_features_val = np.array([classic_features[k] for k in interpretation if k in classic_features]).reshape(1,len(interpretation))

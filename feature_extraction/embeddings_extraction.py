@@ -4,8 +4,16 @@ import torch
 from torch.utils.data import DataLoader, Dataset
 import cv2 as cv
 from tqdm import tqdm
-from ..config import device, model_resnet as model, HOME_DIR, BASE_PATH
+from ..config import device, HOME_DIR, BASE_PATH
 from pathlib import Path
+from torchvision import models 
+import torch.nn as nn
+
+
+model_resnet = models.resnet50(weights='DEFAULT').to(device)
+model_resnet.fc = nn.Linear(2048, 64).to(device)
+model_resnet.eval()
+
 
 class CustomDataset(Dataset):
     def __init__(self, img):
@@ -25,7 +33,7 @@ class CustomDataset(Dataset):
         return img
 
 
-def get_features(image):
+def get_features(image, model):
     with torch.no_grad():
         output = model(image).cpu().numpy()
 
@@ -34,11 +42,13 @@ def get_features(image):
 
 if __name__ == '__main__':
 
+    
+
     dataset = pd.read_csv(f'{BASE_PATH}/data/03_dataset_crop.csv')
+    dataset['path'] = str(HOME_DIR) + dataset['path']
     dataset = dataset.sort_values('image')
 
-    print(dataset)
-    
+
     img_paths = dataset['path']
 
     img_paths = np.array(img_paths)
@@ -53,7 +63,8 @@ if __name__ == '__main__':
 
 
     for idx, data in enumerate(tqdm(img_loader)):
-        embedding = get_features(data.to(device))
+        print(model_resnet.fc.weight[0][:5])
+        embedding = get_features(data.to(device), model_resnet)
         embeddings.extend(embedding)
 
 
@@ -64,6 +75,8 @@ if __name__ == '__main__':
     print(embeddings_np.shape)
 
     np.savez(f'{BASE_PATH}/data/embeddings.npz', embeddings = embeddings_np, base_ids=img_base_ids)
+
+    torch.save(model_resnet.state_dict(), f'{BASE_PATH}/data/embeddings_model.pth')
 
         
 
